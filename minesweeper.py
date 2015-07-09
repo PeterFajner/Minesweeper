@@ -1,6 +1,9 @@
 from Tkinter import *
+import solver
 import random
 import datetime
+import sys
+
 #import ttk
 
 # defaults
@@ -13,6 +16,9 @@ COLOUR_MINE = "red"
 COLOUR_UNREVEALED = "grey70"
 COLOUR_REVEALED = "grey80"
 COLOUR_MARKED = "green yellow"
+COLOUR_CORRECTLY_MARKED = "green3"
+COLOUR_INCORRECTLY_MARKED = "DeepPink2"
+COLOUR_HINT = "ivory2"
 
 class App:
 
@@ -21,6 +27,11 @@ class App:
 		# win and lose conditions
 		self.has_lost = False
 		self.has_won = False
+
+		# row, columns, and mine data
+		self.num_rows = 0
+		self.num_columns = 0
+		self.num_mines = 0
 
 		# a list of the cells as objects
 		self.cells = []
@@ -69,16 +80,19 @@ class App:
 		self.bottom = Frame(master)
 		self.bottom.grid(row=2)
 
-		self.bottom.button_think = Button(self.bottom, text="Hint")
+		self.bottom.button_think = Button(self.bottom, text="Hint", command=lambda: solver.hint(app))
 		self.bottom.button_think.grid(row=0, column=0)
 
-		self.bottom.button_solve = Button(self.bottom, text="Solve")
+		self.bottom.button_solve = Button(self.bottom, text="Solve", command=lambda: solver.solve(app))
 		self.bottom.button_solve.grid(row=0, column=1)
 		
 		self.bottom.gameboard = Frame(self.bottom)
 		self.bottom.gameboard.grid(row=1, column=0)
 
 	def setup_board(self):
+		print "NEW GAME"
+		self.has_lost = False
+		self.has_won = False
 		self.create_cells()
 		self.set_mines()
 		self.draw_cells()
@@ -102,6 +116,13 @@ class App:
 			columns = int(self.top.entry_columns.get())
 		except ValueError:
 			pass
+
+		# needed to prevent recursion depth error
+		if rows * columns > 1500:
+			sys.setrecursionlimit(rows * columns * 10)
+
+		self.num_rows = rows
+		self.num_columns = columns
 
 		for x in xrange(columns):
 			self.cells.append([])
@@ -137,13 +158,21 @@ class App:
 			num_mines = int(self.top.entry_mines.get())
 		except ValueError:
 			pass
+
+		self.num_mines = num_mines
+
 		for i in xrange(num_mines):
-			x = random.randrange(len(self.cells))
-			y = random.randrange(len(self.cells[0]))
+
+			x = 0
+			y = 0
+
+			# make sure we don't duplicate a mine
+			while True:
+				x = random.randrange(len(self.cells))
+				y = random.randrange(len(self.cells[0]))
+				if not self.cells[x][y].is_mine:
+					break
 			mine = self.cells[x][y]
-			if mine.is_mine:
-				i -= 1 # can't have two mines be the same mine
-				continue
 			mine.is_mine = True
 
 			# set numbers of nearby cells
@@ -165,11 +194,17 @@ class App:
 
 		if cell.is_revealed:
 			if not cell.is_mine:
-				widget.config(bg=COLOUR_REVEALED)
-				if cell.number > 0:
-					widget.config(text=" "+str(cell.number)+" ")
+				if cell.is_marked:
+					widget.config(bg=COLOUR_INCORRECTLY_MARKED)
+				else:
+					widget.config(bg=COLOUR_REVEALED)
+					if cell.number > 0:
+						widget.config(text=" "+str(cell.number)+" ")
 			else:
-				widget.config(bg=COLOUR_MINE)
+				if cell.is_marked:
+					widget.config(bg=COLOUR_CORRECTLY_MARKED)
+				else:
+					widget.config(bg=COLOUR_MINE)
 		else:
 			if cell.is_marked:
 				widget.config(bg=COLOUR_MARKED)
@@ -177,7 +212,17 @@ class App:
 				widget.config(bg=COLOUR_UNREVEALED)
 
 	def lose(self):
-		return
+		self.has_lost = True
+		for row in self.cells:
+			for cell in row:
+				cell.is_revealed = True
+				self.update_cell_widget(cell)
+
+	# update all widgets immediately
+	def update_widgets(self):
+		for row in self.cells_widgets:
+			for widget in row:
+				widget.update_idletasks()
 
 
 
@@ -229,7 +274,7 @@ class Cell:
 
 	# toggle marking
 	def right_mouse(self, event):
-		if not self.is_revealed:
+		if not self.is_revealed and not app.has_lost:
 			self.is_marked = not self.is_marked
 			app.update_cell_widget(self)
 		
